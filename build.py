@@ -146,13 +146,13 @@ def build_morp(chardef, unkdef, csvs, da, morpbin, idmorpmap, encoding):
         collect_morphs(chardef, unkdef, csvs, da, encoding))
 
     with open(morpbin, 'wb') as o:
-        o.write(struct.pack("!I", sum(len(vs) for vs in morplist)))
+        o.write(struct.pack('!I', sum(len(vs) for vs in morplist)))
         for vs in morplist:
             for posid, cost in vs:
-                o.write(struct.pack("!H", posid))
-                o.write(struct.pack("!H", cost))
+                o.write(struct.pack('!H', posid))
+                o.write(struct.pack('!H', cost))
 
     with open(idmorpmap, 'wb') as o:
-        o.write(struct.pack("!I", len(morplist)))
+        o.write(struct.pack('!I', len(morplist)))
         for vs in morplist:
             o.write(struct.pack('B', len(vs)))
