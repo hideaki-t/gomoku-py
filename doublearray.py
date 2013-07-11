@@ -46,8 +46,7 @@ class Trie:
 
 def isterminal(node):
     # check 40th bit
-    return ((node >> 40) & 0x1) == 0x1
-    #return node & 0x10000000000 != 0
+    return node & 0x10000000000 != 0
 
 
 def base(node):
