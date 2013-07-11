@@ -24,13 +24,14 @@ def main(indir, outdir, enc='euc-jp'):
     print('da')
     build_doublearray(outdir)
     print('morp')
-    da = DoubleArray('')
+    da = DoubleArray(open(os.path.join(outdir, 'surface-id.bin'), 'rb'),
+                     open(os.path.join(outdir, 'code-map.bin'), 'rb'))
     build_morp(os.path.join(indir, 'char.def'),
                os.path.join(indir, 'unk.def'),
                [x for x in [os.path.join(indir, x) for x in os.listdir(indir)
                 if x.endswith('.csv')] if os.path.isfile(x)],
                da,
-               os.path.join(outdir, 'morp.bin'),
+               os.path.join(outdir, 'morpheme.bin'),
                os.path.join(outdir, 'id-morphemes-map.bin'),
                enc)
 
@@ -131,9 +132,9 @@ def collect_morphs(chardef, unkdef, csvs, da, encoding):
 
 def morpdict_tolist(morps):
     def lowcost_cut_filter(idcost_pair):
-        # order by pos-id and keep the highest cost
+        # order by pos-id and keep the smallest cost for each pos-id
         return [next(v) for k, v in itertools.groupby(
-            sorted(idcost_pair, reverse=True), key=lambda x: x[0])]
+            sorted(idcost_pair), key=lambda x: x[0])]
 
     morplist = [None] * len(morps)
     for morpid, vs in morps.items():
@@ -150,7 +151,7 @@ def build_morp(chardef, unkdef, csvs, da, morpbin, idmorpmap, encoding):
         for vs in morplist:
             for posid, cost in vs:
                 o.write(struct.pack('!H', posid))
-                o.write(struct.pack('!H', cost))
+                o.write(struct.pack('!h', cost))
 
     with open(idmorpmap, 'wb') as o:
         o.write(struct.pack('!I', len(morplist)))
