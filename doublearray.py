@@ -29,9 +29,9 @@ class Trie:
     def __init__(self):
         self.root = Trie.Node()
 
-    def insert(self, seq):
+    def insert(self, text):
         node = self.root
-        for v in seq:
+        for v in array.array('H', text.encode('UTF-16-LE')):
             if v not in node.children:
                 node.add(v)
             node = node.children[v]
@@ -201,8 +201,7 @@ def build_doublearray(csvs, encoding):
     cur = 0
     def getcode(child):
         nonlocal cur
-        # todo child.value -> code
-        v = struct.unpack('!H', child.value.encode('UTF-16-BE'))[0]
+        v = child.value
         if codemap[v] == 0:
             cur += 1
             print(v, codemap[v], cur)
@@ -221,9 +220,7 @@ def build_doublearray(csvs, encoding):
     while not q.empty():
         _, _, cldrn, node, idx = q.get()
         firstchild = next(iter(node.children.values())) if node.children else None
-        _1 = ord(node.value) if node.value else -1
-        _2 = ord(firstchild.value) if firstchild else -1
-        print("n{} c{} l{}".format(_1, _2, len(cldrn)))
+        print("n{} c{} l{}".format(node.value, firstchild.value if firstchild else -1, len(cldrn)))
         if firstchild in memo:
             da[opts][idx] = calc_nodeopt(node)
             da[base][idx] = 0 ## TODO
