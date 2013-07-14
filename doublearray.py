@@ -85,9 +85,6 @@ def incid(nid, node):
 
 class DoubleArray:
     def __init__(self, surfaceid, codemap):
-        #self.base = array.array('I')
-        #self.chck = array.array('H')
-        #self.opts = array.array('H')
         cnt = struct.unpack('!I', surfaceid.read(4))[0]
         self.nodes = array.array('Q')
         self.nodes.fromfile(surfaceid, cnt)
@@ -121,6 +118,8 @@ class DoubleArray:
     # codelimit(4byte)
     # charcode(2byte) * codelimit
 
+import time
+
 class NodeAllocator:
     def __init__(self, size):
         self.nexts = array.array('i', range(1, size + 1))
@@ -129,22 +128,26 @@ class NodeAllocator:
         self.size = size
 
     def allocate(self, codes):
+        start = time.clock()
+        #cnt = itertools.count()
         nexts = self.nexts
         used = self.used
-        canalloc = self.__canalloc
         alloc = self.__alloc
         first = codes[0]
         cur = 0
         while True:
             cur = nexts[cur]
             base = cur - first
+            #next(cnt)
+            #print(first, cur, base)
             if base < 0:
                 continue
-            bit = (1 << base)
-            if used & bit == 0 and canalloc(base, codes):
-                used |= bit
+            if not (used >> base) & 1 and all(nexts[base + c] != -1 for c in codes):
                 for c in codes:
                     alloc(base + c)
+                self.used |= (1 << base)
+                #print('allocated', base, cnt, time.clock() - start)
+                print('allocated', base, time.clock() - start)
                 return base
 
     def __alloc(self, index):
@@ -156,17 +159,6 @@ class NodeAllocator:
         prevs[nexts[index]] = prevs[index]
         nexts[index] = prevs[index] = -1
 
-    def __canalloc(self, base, codes):
-        nexts = self.nexts
-        return all(nexts[base + c] != -1 for c in codes)
-
-
-import heapq
-class PriorityQueue:
-    def __init__(self):
-        self.heap = []
-    def push(self, value):
-        heapq.push()
 
 def calc_nodeopt(node):
     return (1 if node.terminal else 0) + \
@@ -184,18 +176,12 @@ def build_doublearray(csvs, encoding):
 #    for k in sorted({row[0] for row in itertools.chain.from_iterable(
 #            csv.reader(open(f, encoding=encoding)) for f in csvs) if row}):
 #        trie.insert(k)
-    print("alloc codemap")
-    codemap = array.array('H', itertools.repeat(0, 0x10000))
     print("count trie node")
-    limit = trie.getnodecount()
-    print("alloc da")
-    da = (array.array('I', itertools.repeat(0, limit)), # base
-          array.array('H', itertools.repeat(0xffff, limit)), # check
-          array.array('I', itertools.repeat(0, limit))) # opts
-    base = 0
-    check = 1
-    opts = 2
-    print("alloc allocator")
+    limit = trie.getnodecount() * 4
+    codemap = array.array('H', itertools.repeat(0, 0x10000))
+    base = array.array('I', itertools.repeat(0, limit))
+    check = array.array('H', itertools.repeat(0xffff, limit))
+    opts = array.array('I', itertools.repeat(0, limit))
     allocator = NodeAllocator(limit)
 
     cur = 0
@@ -215,25 +201,22 @@ def build_doublearray(csvs, encoding):
     # * process the node which has largest number of child nodes.
     #   smaller value means higher priority in PriorityQueue
     # http://docs.python.org/3/library/heapq.html#priority-queue-implementation-notes
-    counter = itertools.count(limit, -1)
-    q.put((limit - len(children), next(counter), children, trie.root, 0))
+    counter = itertools.count(limit, step=-1)
+    q.put((-len(children), next(counter), children, trie.root, 0))
     while not q.empty():
         _, _, cldrn, node, idx = q.get()
         firstchild = next(iter(node.children.values())) if node.children else None
         print("n{} c{} l{}".format(node.value, firstchild.value if firstchild else -1, len(cldrn)))
-        if firstchild in memo:
-            da[opts][idx] = calc_nodeopt(node)
-            da[base][idx] = 0 ## TODO
-            continue
-
-        da[opts][idx] = calc_nodeopt(node)
-        if cldrn:
+        opts[idx] = calc_nodeopt(node)
+        baseidx = memo.get(firstchild)
+        if baseidx is not None:
+            base[idx] = baseidx
+        elif cldrn:
             baseidx = allocator.allocate([getcode(c) for c in cldrn])
             memo[firstchild] = baseidx
             for cld in cldrn:
                 g_children = cld.children.values()
-                #print(cld.value, len(g_children), next(iter(g_children)).value if g_children else None)
                 arc = getcode(cld)
                 nxt = baseidx + arc
-                da[check][nxt] = arc
+                check[nxt] = arc
                 q.put((limit - len(g_children), next(counter), g_children, cld, nxt))
