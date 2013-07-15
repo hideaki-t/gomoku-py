@@ -4,6 +4,8 @@ import collections
 import itertools
 import queue
 import struct
+from nodealloc import NodeAllocator
+from nodealloc_c import NodeAllocator
 
 
 class Trie:
@@ -118,51 +120,26 @@ class DoubleArray:
     # codelimit(4byte)
     # charcode(2byte) * codelimit
 
-import time
-
-class NodeAllocator:
-    def __init__(self, size):
-        self.nexts = array.array('i', range(1, size + 1))
-        self.prevs = array.array('i', range(-1, size - 1))
-        self.used = 1
-        self.size = size
-
-    def allocate(self, codes):
-        start = time.clock()
-        #cnt = itertools.count()
-        nexts = self.nexts
-        used = self.used
-        alloc = self.__alloc
-        first = codes[0]
-        cur = 0
-        while True:
-            cur = nexts[cur]
-            base = cur - first
-            #next(cnt)
-            #print(first, cur, base)
-            if base < 0:
-                continue
-            if not (used >> base) & 1 and all(nexts[base + c] != -1 for c in codes):
-                for c in codes:
-                    alloc(base + c)
-                self.used |= (1 << base)
-                #print('allocated', base, cnt, time.clock() - start)
-                print('allocated', base, time.clock() - start)
-                return base
-
-    def __alloc(self, index):
-        nexts = self.nexts
-        prevs = self.prevs
-        if nexts[index] == -1 or prevs[index] == -1:
-            raise Exception()
-        nexts[prevs[index]] = nexts[index]
-        prevs[nexts[index]] = prevs[index]
-        nexts[index] = prevs[index] = -1
-
 
 def calc_nodeopt(node):
     return (1 if node.terminal else 0) + \
         (len(node.sibling.children) if node.sibling else 0)
+
+
+class CodeCounter:
+    def __init__(self):
+        self.codemap = array.array('H', itertools.repeat(0, 0x10000))
+        self.cur = 0
+
+    def getcode(self, child):
+        v = child.value
+        cmap = self.codemap
+        c = cmap[v]
+        if c == 0:
+            c = self.cur = self.cur + 1
+            print(v, cmap[v], c)
+            cmap[v] = c
+        return c
 
 
 def build_doublearray(csvs, encoding):
@@ -178,34 +155,24 @@ def build_doublearray(csvs, encoding):
 #        trie.insert(k)
     print("count trie node")
     limit = trie.getnodecount() * 4
-    codemap = array.array('H', itertools.repeat(0, 0x10000))
     base = array.array('I', itertools.repeat(0, limit))
     check = array.array('H', itertools.repeat(0xffff, limit))
     opts = array.array('I', itertools.repeat(0, limit))
     allocator = NodeAllocator(limit)
-
-    cur = 0
-    def getcode(child):
-        nonlocal cur
-        v = child.value
-        if codemap[v] == 0:
-            cur += 1
-            print(v, codemap[v], cur)
-            codemap[v] = cur
-        return codemap[v]
-
-    memo = {}
+    codecounter = CodeCounter()
+    getcode = codecounter.getcode
     children = trie.root.children.values()
+    memo = {}
     q = queue.PriorityQueue()
+    counter = itertools.count(limit, step=-1)
     # * use counter to prevent comparing Trie.Node(dose not have __lt__)
     # * process the node which has largest number of child nodes.
     #   smaller value means higher priority in PriorityQueue
     # http://docs.python.org/3/library/heapq.html#priority-queue-implementation-notes
-    counter = itertools.count(limit, step=-1)
     q.put((-len(children), next(counter), children, trie.root, 0))
     while not q.empty():
         _, _, cldrn, node, idx = q.get()
-        firstchild = next(iter(node.children.values())) if node.children else None
+        firstchild = node.children[next(reversed(node.children))] if node.children else None
         print("n{} c{} l{}".format(node.value, firstchild.value if firstchild else -1, len(cldrn)))
         opts[idx] = calc_nodeopt(node)
         baseidx = memo.get(firstchild)
