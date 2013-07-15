@@ -48,7 +48,7 @@ class Trie:
         for c in node.children.values():
             yield c.collect_values()
 
-    def bulid(self, keys):
+    def build(self, keys):
         for key in keys:
             self.insert(key)
 
@@ -142,26 +142,27 @@ class CodeCounter:
         return c
 
 
-def build_doublearray(csvs, encoding):
-    trie = Trie()
-    print("make keys")
-    keys = sorted({row[0] for row in itertools.chain.from_iterable(
+def make_keys(csvs, encoding):
+    return sorted({row[0] for row in itertools.chain.from_iterable(
         csv.reader(open(f, encoding=encoding)) for f in csvs) if row})
-    print("insert to trie")
-    for k in keys:
-        trie.insert(k)
-#    for k in sorted({row[0] for row in itertools.chain.from_iterable(
-#            csv.reader(open(f, encoding=encoding)) for f in csvs) if row}):
-#        trie.insert(k)
+
+
+def allocate_arrays(limit):
+    return (array.array('I', itertools.repeat(0, limit)),
+            array.array('H', itertools.repeat(0xffff, limit)),
+            array.array('I', itertools.repeat(0, limit)))
+
+
+def build_doublearray(csvs, encoding):
+    print("build trie")
+    trie = Trie()
+    trie.build(make_keys(csvs, encoding))
     print("count trie node")
     limit = trie.getnodecount() * 4
-    base = array.array('I', itertools.repeat(0, limit))
-    check = array.array('H', itertools.repeat(0xffff, limit))
-    opts = array.array('I', itertools.repeat(0, limit))
+    base, check, opts = allocate_arrays(limit)
     allocator = NodeAllocator(limit)
     codecounter = CodeCounter()
     getcode = codecounter.getcode
-    children = trie.root.children.values()
     memo = {}
     q = queue.PriorityQueue()
     counter = itertools.count(limit, step=-1)
@@ -169,11 +170,16 @@ def build_doublearray(csvs, encoding):
     # * process the node which has largest number of child nodes.
     #   smaller value means higher priority in PriorityQueue
     # http://docs.python.org/3/library/heapq.html#priority-queue-implementation-notes
-    q.put((-len(children), next(counter), children, trie.root, 0))
+    q.put((-len(trie.root.children), next(counter),
+           trie.root.children.values(), trie.root, 0))
     while not q.empty():
         _, _, cldrn, node, idx = q.get()
-        firstchild = node.children[next(reversed(node.children))] if node.children else None
-        print("n{} c{} l{}".format(node.value, firstchild.value if firstchild else -1, len(cldrn)))
+        if node.children:
+            firstchild = node.children[next(reversed(node.children))]
+        else:
+            firstchild = None
+        print("n{} c{} l{}".format(node.value, firstchild.value
+                                   if firstchild else -1, len(cldrn)))
         opts[idx] = calc_nodeopt(node)
         baseidx = memo.get(firstchild)
         if baseidx is not None:
@@ -182,8 +188,9 @@ def build_doublearray(csvs, encoding):
             baseidx = allocator.allocate([getcode(c) for c in cldrn])
             memo[firstchild] = baseidx
             for cld in cldrn:
-                g_children = cld.children.values()
+                g_children = cld.children
                 arc = getcode(cld)
                 nxt = baseidx + arc
                 check[nxt] = arc
-                q.put((limit - len(g_children), next(counter), g_children, cld, nxt))
+                q.put((-len(g_children), next(counter),
+                       g_children.values(), cld, nxt))
