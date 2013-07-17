@@ -160,16 +160,24 @@ class DoubleArray:
 
 
 def calc_nodeopt(node):
-    def calc_total(node, slot):
-        n = getattr(node, slot)
-        if n is not None:
+    def f(node):
+        v = 0
+        q = [node]
+        while q:
+            n = q.pop()
             if n.terminal:
-                yield 1
-            for c in calc_total(n, 'child'):
-                yield c
-            for c in calc_total(n, 'sibling'):
-                yield c
-    return (1 if node.terminal else 0) + (sum(calc_total(node, 'sibling')) << 1)
+                v += 1
+            if n.sibling:
+                q.append(n.sibling)
+            if n.child:
+                q.append(n.child)
+        return v
+
+    if node.sibling is None:
+        v = 0
+    else:
+        v = f(node.sibling) << 1
+    return (1 if node.terminal else 0) + v
 
 
 class CodeCounter:
