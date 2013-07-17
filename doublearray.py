@@ -12,41 +12,76 @@ class Trie:
     class Node:
         def __init__(self, value=None):
             self.value = value
-            self.children = collections.OrderedDict()
-            self.terminal = False
+            self.child = None
             self.sibling = None
+            self.terminal = False
 
         def add(self, value):
             child = Trie.Node(value)
-            child.sibling = self
-            self.children[value] = child
+            child.sibling = self.child
+            self.child = child
 
         def collect_values(self):
             if self.terminal:
                 yield self.value
-            for c in self.children.values():
-                for x in c.collect_values():
-                    yield self.value + x
+            child = self.child
+            while child:
+                for childv in child.collect_values():
+                    yield self.value + childv
+                child = child.sibling
+
+        def get_child(self, c):
+            for child in self.collect_children():
+                if child.value == c:
+                    return child
+
+        def collect_children(self):
+            child = self.child
+            while child:
+                yield child
+                child = child.sibling
+
+        def __eq__(self, other):
+            return self.child is other.child and \
+                self.sibling is other.sibling and \
+                self.value == other.value and \
+                self.terminal == other.terminal
+
+        def __hash__(self):
+            return hash(id(self.child)) + hash(id(self.sibling)) + hash(self.value) + hash(self.terminal)
 
     def __init__(self):
-        self.root = Trie.Node()
+        self.memo = {}
+        self.root = self.share(Trie.Node())
+
+    def share(self, node):
+        if not node:
+            return None
+        n = self.memo.get(node)
+        if n:
+            print("shared", n.value)
+            return n
+        node.chlid = self.share(node.child)
+        node.sibling = self.share(node.sibling)
+        self.memo[node] = node
+        return node
 
     def insert(self, text):
         node = self.root
         for v in array.array('H', text.encode('UTF-16-LE')):
-            if v not in node.children:
+            if not node.get_child(v):
+                node.child = self.share(node.child)
                 node.add(v)
-            node = node.children[v]
+            node = node.get_child(v)
         node.terminal = True
 
     def common_prefix_search(self, prefix):
         node = self.root
         for v in prefix:
-            if v not in node.children:
-                return
-            node = node.children[v]
-        for c in node.children.values():
-            yield c.collect_values()
+            node = node.get_child(v)
+            if not node: return
+        for child in node.collect_children():
+            yield child.collect_values()
 
     def build(self, keys):
         for key in keys:
@@ -55,10 +90,13 @@ class Trie:
     def getnodecount(self):
         def f(node):
             yield node
-            for cn in node.children.values():
-                for c in f(cn):
-                    yield c
-        return sum(1 for _ in f(self.root))
+            child = node.child
+            while child:
+                for g_child in f(child):
+                    yield g_child
+                child = child.sibling
+
+        return len(set(f(self.root)))
 
 
 def isterminal(node):
@@ -122,8 +160,16 @@ class DoubleArray:
 
 
 def calc_nodeopt(node):
-    return (1 if node.terminal else 0) + \
-        (len(node.sibling.children) if node.sibling else 0)
+    def calc_total(node, slot):
+        n = getattr(node, slot)
+        if n is not None:
+            if n.terminal:
+                yield 1
+            for c in calc_total(n, 'child'):
+                yield c
+            for c in calc_total(n, 'sibling'):
+                yield c
+    return (1 if node.terminal else 0) + (sum(calc_total(node, 'sibling')) << 1)
 
 
 class CodeCounter:
@@ -153,44 +199,72 @@ def allocate_arrays(limit):
             array.array('I', itertools.repeat(0, limit)))
 
 
+def adjust(base, check, opts):
+    maxbase = max(base)
+    maxcode = max(x for x in check if x != 0xffff)
+    limit = maxbase + maxcode + 1
+    return (base[:limit], check[:limit], opts[:limit])
+
+
 def build_doublearray(csvs, encoding):
     print("build trie")
     trie = Trie()
     trie.build(make_keys(csvs, encoding))
     print("count trie node")
     limit = trie.getnodecount() * 4
+    print(limit)
     base, check, opts = allocate_arrays(limit)
     allocator = NodeAllocator(limit)
     codecounter = CodeCounter()
     getcode = codecounter.getcode
     memo = {}
     q = queue.PriorityQueue()
-    counter = itertools.count(limit, step=-1)
+    counter = itertools.count()
+    children = list(trie.root.collect_children())[::-1]
     # * use counter to prevent comparing Trie.Node(dose not have __lt__)
     # * process the node which has largest number of child nodes.
     #   smaller value means higher priority in PriorityQueue
     # http://docs.python.org/3/library/heapq.html#priority-queue-implementation-notes
-    q.put((-len(trie.root.children), next(counter),
-           trie.root.children.values(), trie.root, 0))
+    q.put((-len(children), next(counter),
+           children, trie.root, 0))
     while not q.empty():
         _, _, cldrn, node, idx = q.get()
-        if node.children:
-            firstchild = node.children[next(reversed(node.children))]
-        else:
-            firstchild = None
-        print("n{} c{} l{}".format(node.value, firstchild.value
-                                   if firstchild else -1, len(cldrn)))
+        print("n{} c{} l{}".format(node.value,
+                                   node.child.value if node.child else -1,
+                                   len(cldrn)))
         opts[idx] = calc_nodeopt(node)
-        baseidx = memo.get(firstchild)
+        baseidx = memo.get(node.child)
+        print("aif {} {} {}".format(("false" if baseidx is None else "true"), node.child, baseidx))
+        print("opts idx {} opt {}".format(idx, opts[idx]))
         if baseidx is not None:
             base[idx] = baseidx
         elif cldrn:
             baseidx = allocator.allocate([getcode(c) for c in cldrn])
-            memo[firstchild] = baseidx
+            memo[node.child] = baseidx
+            base[idx] = baseidx
+            print("base node {} base {}".format(idx, baseidx))
             for cld in cldrn:
-                g_children = cld.children
+                g_children = list(cld.collect_children())[::-1]
                 arc = getcode(cld)
                 nxt = baseidx + arc
                 check[nxt] = arc
+                print("chck base", baseidx, arc, nxt)
                 q.put((-len(g_children), next(counter),
-                       g_children.values(), cld, nxt))
+                       g_children, cld, nxt))
+    import pickle
+    pickle.dump((base, check, opts, codecounter.codemap), open('/home/hideaki/da.dump', 'wb'))
+    print('build done')
+    base, check, opts = adjust(base, check, opts)
+    print('adjust done')
+    with open('/tmp/surface-id.bin', 'wb') as o:
+        o.write(struct.pack('!I', len(base)))
+        for i in range(len(base)):
+            v = base[i] | (check[i] << 24) | (opts[i] << 40)
+            print("base={}, chck={}, opts={}, v={}".format(hex(base[i]), hex(check[i]), hex(opts[i]), hex(v)))
+            o.write(struct.pack('!Q', v))
+    with open('/tmp/code-map.bin', 'wb') as o:
+        codemap = codecounter.codemap
+        o.write(struct.pack('!I', len(codemap)))
+        for c in codemap:
+            o.write(struct.pack('!H', c))
+    return (base, check, opts, codecounter.codemap)
