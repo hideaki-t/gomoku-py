@@ -4,11 +4,11 @@ import collections
 import re
 import itertools
 import csv
-import doublearray
-from doublearray import DoubleArray
+from .doublearray import build as dabuild
+from .doublearray.build import DoubleArray
 
 
-def main(indir, outdir, enc='euc-jp'):
+def build(indir, outdir, enc='euc-jp'):
     # check output directry in main
     print('matrix')
     build_matrix(open(os.path.join(indir, 'matrix.def'), encoding=enc),
@@ -110,16 +110,15 @@ def build_code_category(i, o):
 
 
 def build_doublearray(csvs, encoding, surfaceid, codemap):
-    base, check, opts, codemap = doublearray.build_doublearray(csvs, encoding)
+    base, check, opts, cmap = dabuild.build_doublearray(csvs, encoding)
     with open(surfaceid, 'wb') as o:
         o.write(struct.pack('!I', len(base)))
         for i in range(len(base)):
             v = base[i] | (check[i] << 24) | (opts[i] << 40)
             o.write(struct.pack('!Q', v))
     with open(codemap, 'wb') as o:
-        codemap = codemap
-        o.write(struct.pack('!I', len(codemap)))
-        for c in codemap:
+        o.write(struct.pack('!I', len(cmap)))
+        for c in cmap:
             o.write(struct.pack('!H', c))
 
 
@@ -171,3 +170,12 @@ def build_morp(chardef, unkdef, csvs, da, morpbin, idmorpmap, encoding):
         o.write(struct.pack('!I', len(morplist)))
         for vs in morplist:
             o.write(struct.pack('B', len(vs)))
+
+
+def main():
+    from sys import argv
+    build(*argv[1:])
+
+
+if __name__ == '__main__':
+    main()

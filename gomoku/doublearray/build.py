@@ -4,9 +4,11 @@ import itertools
 import queue
 import struct
 try:
-    from nodealloc_c import NodeAllocator
+    from .nodealloc_c import NodeAllocator
+    print('using native NodeAllocator')
 except:
-    from nodealloc import NodeAllocator
+    from .nodealloc import NodeAllocator
+    print('using python NodeAllocator')
 
 
 class Trie:
@@ -213,7 +215,7 @@ def build_doublearray(csvs, encoding):
     trie.build(make_keys(csvs, encoding))
     print("count trie node")
     limit = trie.getnodecount() * 4
-    print(limit)
+    print("number of trie node", limit//4)
     base, check, opts = allocate_arrays(limit)
     allocator = NodeAllocator(limit)
     codecounter = CodeCounter()
@@ -221,43 +223,28 @@ def build_doublearray(csvs, encoding):
     memo = {}
     q = queue.PriorityQueue()
     counter = itertools.count()
-    children = list(trie.root.collect_children())[::-1]
     # * use counter to prevent comparing Trie.Node(dose not have __lt__)
     # * process the node which has largest number of child nodes.
     #   smaller value means higher priority in PriorityQueue
     # http://docs.python.org/3/library/heapq.html#priority-queue-implementation-notes
-    q.put((-len(children), next(counter),
-           children, trie.root, 0))
+    q.put((0, next(counter),
+           list(trie.root.collect_children())[::-1], trie.root, 0))
+    print("start converting from trie to double array")
     while not q.empty():
-        _, _, cldrn, node, idx = q.get()
+        _, _, children, node, idx = q.get()
         opts[idx] = calc_nodeopt(node)
         baseidx = memo.get(node.child)
         if baseidx is not None:
             base[idx] = baseidx
-        elif cldrn:
-            baseidx = allocator.allocate([getcode(c) for c in cldrn])
+        elif children:
+            baseidx = allocator.allocate([getcode(c) for c in children])
             memo[node.child] = baseidx
             base[idx] = baseidx
-            for cld in cldrn:
-                g_children = list(cld.collect_children())[::-1]
-                arc = getcode(cld)
+            for child in children:
+                g_children = list(child.collect_children())[::-1]
+                arc = getcode(child)
                 nxt = baseidx + arc
                 check[nxt] = arc
                 q.put((-len(g_children), next(counter),
-                       g_children, cld, nxt))
-    import pickle
-    pickle.dump((base, check, opts, codecounter.codemap), open('/home/hideaki/da.dump', 'wb'))
-    print('build done')
-    base, check, opts = adjust(base, check, opts)
-    print('adjust done')
-    with open('/tmp/surface-id.bin', 'wb') as o:
-        o.write(struct.pack('!I', len(base)))
-        for i in range(len(base)):
-            v = base[i] | (check[i] << 24) | (opts[i] << 40)
-            o.write(struct.pack('!Q', v))
-    with open('/tmp/code-map.bin', 'wb') as o:
-        codemap = codecounter.codemap
-        o.write(struct.pack('!I', len(codemap)))
-        for c in codemap:
-            o.write(struct.pack('!H', c))
+                       g_children, child, nxt))
     return (base, check, opts, codecounter.codemap)
