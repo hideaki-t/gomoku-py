@@ -1,11 +1,12 @@
 import array
 import csv
-import collections
 import itertools
 import queue
 import struct
-from nodealloc import NodeAllocator
-from nodealloc_c import NodeAllocator
+try:
+    from nodealloc_c import NodeAllocator
+except:
+    from nodealloc import NodeAllocator
 
 
 class Trie:
@@ -48,7 +49,8 @@ class Trie:
                 self.terminal == other.terminal
 
         def __hash__(self):
-            return hash(id(self.child)) + hash(id(self.sibling)) + hash(self.value) + hash(self.terminal)
+            return hash(id(self.child)) + hash(id(self.sibling)) +\
+                hash(self.value) + hash(self.terminal)
 
     def __init__(self):
         self.memo = {}
@@ -59,7 +61,6 @@ class Trie:
             return None
         n = self.memo.get(node)
         if n:
-            print("shared", n.value)
             return n
         node.chlid = self.share(node.child)
         node.sibling = self.share(node.sibling)
@@ -79,7 +80,8 @@ class Trie:
         node = self.root
         for v in prefix:
             node = node.get_child(v)
-            if not node: return
+            if not node:
+                return
         for child in node.collect_children():
             yield child.collect_values()
 
@@ -150,14 +152,6 @@ class DoubleArray:
         if isterminal(nodes[node]):
             return incid(nid, nodes[node])
 
-    # surface
-    # nodecount(4byte)
-    # node(8byte) * nodecount
-
-    # code-map
-    # codelimit(4byte)
-    # charcode(2byte) * codelimit
-
 
 def calc_nodeopt(node):
     def f(node):
@@ -191,7 +185,6 @@ class CodeCounter:
         c = cmap[v]
         if c == 0:
             c = self.cur = self.cur + 1
-            print(v, cmap[v], c)
             cmap[v] = c
         return c
 
@@ -237,26 +230,19 @@ def build_doublearray(csvs, encoding):
            children, trie.root, 0))
     while not q.empty():
         _, _, cldrn, node, idx = q.get()
-        print("n{} c{} l{}".format(node.value,
-                                   node.child.value if node.child else -1,
-                                   len(cldrn)))
         opts[idx] = calc_nodeopt(node)
         baseidx = memo.get(node.child)
-        print("aif {} {} {}".format(("false" if baseidx is None else "true"), node.child, baseidx))
-        print("opts idx {} opt {}".format(idx, opts[idx]))
         if baseidx is not None:
             base[idx] = baseidx
         elif cldrn:
             baseidx = allocator.allocate([getcode(c) for c in cldrn])
             memo[node.child] = baseidx
             base[idx] = baseidx
-            print("base node {} base {}".format(idx, baseidx))
             for cld in cldrn:
                 g_children = list(cld.collect_children())[::-1]
                 arc = getcode(cld)
                 nxt = baseidx + arc
                 check[nxt] = arc
-                print("chck base", baseidx, arc, nxt)
                 q.put((-len(g_children), next(counter),
                        g_children, cld, nxt))
     import pickle
@@ -268,7 +254,6 @@ def build_doublearray(csvs, encoding):
         o.write(struct.pack('!I', len(base)))
         for i in range(len(base)):
             v = base[i] | (check[i] << 24) | (opts[i] << 40)
-            print("base={}, chck={}, opts={}, v={}".format(hex(base[i]), hex(check[i]), hex(opts[i]), hex(v)))
             o.write(struct.pack('!Q', v))
     with open('/tmp/code-map.bin', 'wb') as o:
         codemap = codecounter.codemap

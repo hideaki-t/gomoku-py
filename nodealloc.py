@@ -1,6 +1,5 @@
 import array
 import itertools
-import time
 
 
 class NodeAllocator:
@@ -17,8 +16,6 @@ class NodeAllocator:
         self.used[p//64] |= (1 << (p % 64))
 
     def allocate(self, codes):
-        start = time.clock()
-        #cnt = itertools.count()
         nexts = self.nexts
         isused = self.isused
         first = codes[0]
@@ -26,16 +23,11 @@ class NodeAllocator:
         while True:
             cur = nexts[cur]
             base = cur - first
-            #next(cnt)
-            #print(first, cur, base)
             if base < 0:
                 continue
-            #print(first, base, cur, (used >> base) & 1, all(nexts[base + c] != -1 for c in codes))
             if not isused(base) and all(nexts[base + c] != -1 for c in codes):
                 self.__alloc(base, codes)
                 self.use(base)
-                #print('allocated', base, cnt, time.clock() - start)
-                print('allocated', base, time.clock() - start)
                 return base
 
     def __alloc(self, base, codes):

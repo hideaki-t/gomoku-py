@@ -1,4 +1,3 @@
-import time
 from ctypes import (cdll, c_ushort, c_int, c_uint, c_ulonglong,
                     CFUNCTYPE, POINTER, Structure)
 
@@ -20,8 +19,6 @@ class NodeAllocator:
         self.size = size
 
     def allocate(self, codes):
-        start = time.clock()
         cds = (c_ushort * len(codes))(*codes)
         base = self.__allocate(self.na, cds, len(codes))
-        print('allocated', base, time.clock() - start)
         return base

@@ -4,6 +4,7 @@ import collections
 import re
 import itertools
 import csv
+import doublearray
 from doublearray import DoubleArray
 
 
@@ -22,14 +23,17 @@ def main(indir, outdir, enc='euc-jp'):
     build_code_category(open(os.path.join(indir, 'char.def'), encoding=enc),
                         open(os.path.join(outdir, 'code.bin'), 'wb'))
     print('da')
-    build_doublearray(outdir)
+    csvs = [x for x in [os.path.join(indir, x) for x in os.listdir(indir)
+                        if x.endswith('.csv')] if os.path.isfile(x)]
+    build_doublearray(csvs, enc,
+                      os.path.join(outdir, 'surface-id.bin'),
+                      os.path.join(outdir, 'code-map.bin'))
     print('morp')
     da = DoubleArray(open(os.path.join(outdir, 'surface-id.bin'), 'rb'),
                      open(os.path.join(outdir, 'code-map.bin'), 'rb'))
     build_morp(os.path.join(indir, 'char.def'),
                os.path.join(indir, 'unk.def'),
-               [x for x in [os.path.join(indir, x) for x in os.listdir(indir)
-                if x.endswith('.csv')] if os.path.isfile(x)],
+               csvs,
                da,
                os.path.join(outdir, 'morpheme.bin'),
                os.path.join(outdir, 'id-morphemes-map.bin'),
@@ -105,8 +109,18 @@ def build_code_category(i, o):
         o.write(struct.pack('!H', mask))
 
 
-def build_doublearray(outdir):
-    pass
+def build_doublearray(csvs, encoding, surfaceid, codemap):
+    base, check, opts, codemap = doublearray.build_doublearray(csvs, encoding)
+    with open(surfaceid, 'wb') as o:
+        o.write(struct.pack('!I', len(base)))
+        for i in range(len(base)):
+            v = base[i] | (check[i] << 24) | (opts[i] << 40)
+            o.write(struct.pack('!Q', v))
+    with open(codemap, 'wb') as o:
+        codemap = codemap
+        o.write(struct.pack('!I', len(codemap)))
+        for c in codemap:
+            o.write(struct.pack('!H', c))
 
 
 def collect_morphs(chardef, unkdef, csvs, da, encoding):
